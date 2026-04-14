@@ -377,6 +377,44 @@ namespace Simple
         CaraTest::areEqual(expectedSkips, suite.skippedTests());
     }
 
+    static void TestContainsWhenSubstringExists()
+    {
+        int expectedPasses = 1;
+        int expectedFails = 0;
+        int expectedSkips = 0;
+        TestRunner runner{ 0, nullptr, TestRunner::OutputMode::None };
+        TestSuite suite{};
+
+        suite.add(std::string(), []()
+            {
+                CaraTest::contains(std::string("str"), std::string("string"));
+            });
+        const auto result = runner.run(suite);
+
+        CaraTest::areEqual(expectedPasses, suite.passedTests());
+        CaraTest::areEqual(expectedFails, suite.failedTests());
+        CaraTest::areEqual(expectedSkips, suite.skippedTests());
+    }
+
+    static void TestContainsWhenSubstringDoesNotExist()
+    {
+        int expectedPasses = 0;
+        int expectedFails = 1;
+        int expectedSkips = 0;
+        TestRunner runner{ 0, nullptr, TestRunner::OutputMode::None };
+        TestSuite suite{};
+
+        suite.add(std::string(), []()
+            {
+                CaraTest::contains(std::string("other"), std::string("string"));
+            });
+        const auto result = runner.run(suite);
+
+        CaraTest::areEqual(expectedPasses, suite.passedTests());
+        CaraTest::areEqual(expectedFails, suite.failedTests());
+        CaraTest::areEqual(expectedSkips, suite.skippedTests());
+    }
+
     static void TestRunnerExecutesTests()
     {
         int expectedPasses = 1;
@@ -787,7 +825,8 @@ auto simpleTest77 = simple->add("TestAreEqualWhenEmptyStringAndEmptyString", Tes
 auto simpleTest78 = simple->add("TestAreEqualWhenStringAndSameString", TestAreEqualWhenStringAndSameString);
 auto simpleTest79 = simple->add("TestAreEqualWhenStringAndDifferentString", TestAreEqualWhenStringAndDifferentString);
 auto simpleTest80 = simple->add("TestRunnerExecutesTests", TestRunnerExecutesTests);
-
+auto simpleTest81 = simple->add("TestContainsWhenSubstringExists", TestContainsWhenSubstringExists);
+auto simpleTest82 = simple->add("TestContainsWhenSubstringDoesNotExist", TestContainsWhenSubstringDoesNotExist);
 
 
 using namespace Parameterized;
@@ -859,7 +898,7 @@ auto helper6 = helper->add("GlobalAddTestWithName_std::string", []()
 auto globalTest3 = CaraTest::addTest([]() {CaraTest::skip(); });
 auto helper7 = helper->add("GlobalAddTestWithoutName", []()
     {
-        CaraTest::areEqual("CaraTestTests.cpp - Line: 859", globalTest3->name());
+        CaraTest::areEqual("CaraTestTests.cpp - Line: 898", globalTest3->name());
     });
 
 // Version 3: addTest(testName, testFunction, data)
@@ -884,5 +923,5 @@ auto helper9 = helper->add("GlobalAddTestWithNameAndData_std::string", []()
 auto globalTest6 = CaraTest::addTest([](bool) {CaraTest::skip(); }, Dummy_Data);
 auto helper10 = helper->add("GlobalAddTestWithNameAndData_const_char*", []()
     {
-        CaraTest::areEqual("CaraTestTests.cpp - Line: 884", globalTest6->name());
+        CaraTest::areEqual("CaraTestTests.cpp - Line: 923", globalTest6->name());
     });

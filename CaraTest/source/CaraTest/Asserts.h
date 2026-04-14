@@ -33,6 +33,27 @@ namespace CaraTest
         }
     }
 
+    template<class T1, class T2>
+    void contains(
+        T1&& expectedSubstring,
+        T2&& actualValue,
+        const std::source_location& location = std::source_location::current())
+    {
+        const auto stringifiedExpectedSubstring = stringify(expectedSubstring);
+        const auto stringifiedActualValue = stringify(actualValue);
+
+        if (stringifiedActualValue.find(stringifiedExpectedSubstring) == std::string::npos)
+        {
+            HANDLE_CARATEST_FAILURE();
+            throw ValueMismatchTestException(
+                stringifyAndMaybeQuote(expectedSubstring),
+                stringifyAndMaybeQuote(actualValue),
+                location,
+                ValueMismatchTestException::OutputMode::All
+            );
+        }
+    }
+
     template<class T1>
     void equalsFile(
         const std::filesystem::path& expectedContentFilePath, 
