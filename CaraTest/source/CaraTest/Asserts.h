@@ -35,19 +35,19 @@ namespace CaraTest
 
     template<class T1, class T2>
     void contains(
-        T1&& expectedSubstring,
-        T2&& actualValue,
+        T1&& haystackValue,
+        T2&& needleValue,
         const std::source_location& location = std::source_location::current())
     {
-        const auto stringifiedExpectedSubstring = stringify(expectedSubstring);
-        const auto stringifiedActualValue = stringify(actualValue);
+        const auto stringifiedHaystack = stringify(haystackValue);
+        const auto stringifiedNeedle = stringify(needleValue);
 
-        if (stringifiedActualValue.find(stringifiedExpectedSubstring) == std::string::npos)
+        if (stringifiedHaystack.find(stringifiedNeedle) == std::string::npos)
         {
             HANDLE_CARATEST_FAILURE();
             throw ValueMismatchTestException(
-                stringifyAndMaybeQuote(expectedSubstring),
-                stringifyAndMaybeQuote(actualValue),
+                stringifyAndMaybeQuote(stringifiedNeedle),
+                stringifyAndMaybeQuote(stringifiedHaystack),
                 location,
                 ValueMismatchTestException::OutputMode::All
             );
