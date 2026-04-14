@@ -10,8 +10,10 @@
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
 #include <QtCore/QJsonArray>
+#include <QtCore/QDirIterator>
 
 #include <QtWidgets/QVBoxLayout>
+#include <QtWidgets/QHBoxLayout>
 #include <QtWidgets/QLabel>
 #include <QtWidgets/QMenuBar>
 #include <QtWidgets/QMenu>
@@ -26,6 +28,12 @@
 #include <QtGui/QFileSystemModel>
 #include <QtGui/QShowEvent>
 
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <dwmapi.h>
+#endif
+
 #include <filesystem>
 
 namespace
@@ -38,14 +46,15 @@ namespace
     const auto RejectColor = QColor("#F44B56");
     const int MaxRecentDirectories = 10;
 
-    static void ShowWarningDialog(const QString& message)
+#ifdef _WIN32
+    static void SetDarkModeTitleBar(const QWidget& window)
     {
-        QMessageBox messageBox;
-        messageBox.setText(message);
-        messageBox.setIcon(QMessageBox::Warning);
-        messageBox.setStandardButtons(QMessageBox::Ok);
-        messageBox.exec();
+        const auto useDarkMode = TRUE;
+        DwmSetWindowAttribute(reinterpret_cast<HWND>(window.winId()), DWMWA_USE_IMMERSIVE_DARK_MODE, &useDarkMode, sizeof(useDarkMode));
     }
+#else
+    static void SetDarkModeTitleBar(const QWidget& window) {}
+#endif
 
     static std::filesystem::path GetOriginFileInfoForSnapshot(const std::filesystem::path& filePath)
     {
@@ -106,6 +115,58 @@ namespace
         const auto jsonContent = jsonDocument.toJson(QJsonDocument::Indented);
         CaraTest::File::writeContent(settingsFilePath, jsonContent.toStdString());
     }
+
+    static QString GetCurrentRootPath(const QFileSystemModel* fileSystemModel, const QTreeView* snapshotFileTree)
+    {
+        return fileSystemModel->filePath(snapshotFileTree->rootIndex());
+    }
+
+    static bool HasSnapshotFiles(const QString& rootPath)
+    {
+        if (rootPath.isEmpty() || !QDir(rootPath).exists())
+            return false;
+
+        QDirIterator iterator(rootPath, QStringList() << SnapshotFileExtensionMask, QDir::Files, QDirIterator::Subdirectories);
+        return iterator.hasNext();
+    }
+}
+
+void SnapshotToolWindow::showWarningDialog(const QString& message) const
+{
+    QMessageBox messageBox;
+    messageBox.setStyle(style());
+    messageBox.setPalette(palette());
+    messageBox.setWindowFlags(Qt::Dialog | Qt::CustomizeWindowHint | Qt::WindowTitleHint | Qt::WindowCloseButtonHint);
+    messageBox.setText(message);
+    messageBox.setIcon(QMessageBox::Information);
+    messageBox.setStandardButtons(QMessageBox::Ok);
+    SetDarkModeTitleBar(messageBox);
+
+    if (auto* okButton = messageBox.button(QMessageBox::Ok))
+        okButton->setMinimumWidth(150);
+
+    messageBox.exec();
+}
+
+bool SnapshotToolWindow::showConfirmationDialog(const QString& title, const QString& message) const
+{
+    QMessageBox messageBox;
+    messageBox.setStyle(style());
+    messageBox.setPalette(palette());
+    messageBox.setWindowFlags(Qt::Dialog | Qt::CustomizeWindowHint | Qt::WindowTitleHint | Qt::WindowCloseButtonHint);
+    messageBox.setWindowTitle(title);
+    messageBox.setText(message);
+    messageBox.setIcon(QMessageBox::Warning);
+    messageBox.setStandardButtons(QMessageBox::Yes | QMessageBox::No);
+    messageBox.setDefaultButton(QMessageBox::No);
+    SetDarkModeTitleBar(messageBox);
+
+    if (auto* yesButton = messageBox.button(QMessageBox::Yes))
+        yesButton->setMinimumWidth(150);
+    if (auto* noButton = messageBox.button(QMessageBox::No))
+        noButton->setMinimumWidth(150);
+
+    return messageBox.exec() == QMessageBox::Yes;
 }
 
 SnapshotToolWindow::SnapshotToolWindow(QWidget* parent)
@@ -161,6 +222,11 @@ SnapshotToolWindow::SnapshotToolWindow(QWidget* parent)
     m_rejectSnapshotButton->setEnabled(false);
     auto rejectStyleSheet = ReadStyleContent(":/styles/rejectbutton.qss");
     m_rejectSnapshotButton->setStyleSheet(rejectStyleSheet);
+    m_rejectAllSnapshotsButton = new QPushButton("All", this);
+    m_rejectAllSnapshotsButton->setToolTip("Reject all snapshots");
+    m_rejectAllSnapshotsButton->setMaximumWidth(48);
+    m_rejectAllSnapshotsButton->setFixedHeight(m_rejectSnapshotButton->sizeHint().height());
+    m_rejectAllSnapshotsButton->setStyleSheet(rejectStyleSheet);
 
     auto originWidget = new QWidget(this);
     auto originLayout = new QVBoxLayout(originWidget);
@@ -170,7 +236,10 @@ SnapshotToolWindow::SnapshotToolWindow(QWidget* parent)
     originLayout->setContentsMargins(originContentMargins);
     originLayout->addWidget(m_originFileName);
     originLayout->addWidget(m_originFileContent);
-    originLayout->addWidget(m_rejectSnapshotButton);
+    auto rejectButtonLayout = new QHBoxLayout();
+    rejectButtonLayout->addWidget(m_rejectSnapshotButton);
+    rejectButtonLayout->addWidget(m_rejectAllSnapshotsButton);
+    originLayout->addLayout(rejectButtonLayout);
 
     m_snapshotFileName = new QLabel(EmptyFileTitle, this);
     m_snapshotFileContent = new QTextEdit(this);
@@ -182,6 +251,11 @@ SnapshotToolWindow::SnapshotToolWindow(QWidget* parent)
     m_acceptSnapshotButton->setEnabled(false);
     auto acceptStyleSheet = ReadStyleContent(":/styles/acceptbutton.qss");
     m_acceptSnapshotButton->setStyleSheet(acceptStyleSheet);
+    m_acceptAllSnapshotsButton = new QPushButton("All", this);
+    m_acceptAllSnapshotsButton->setToolTip("Accept all snapshots");
+    m_acceptAllSnapshotsButton->setMaximumWidth(48);
+    m_acceptAllSnapshotsButton->setFixedHeight(m_acceptSnapshotButton->sizeHint().height());
+    m_acceptAllSnapshotsButton->setStyleSheet(acceptStyleSheet);
 
     auto snapshotWidget = new QWidget(this);
     auto snapshotLayout = new QVBoxLayout(snapshotWidget);
@@ -190,7 +264,10 @@ SnapshotToolWindow::SnapshotToolWindow(QWidget* parent)
     snapshotLayout->setContentsMargins(snapshotContentMargins);
     snapshotLayout->addWidget(m_snapshotFileName);
     snapshotLayout->addWidget(m_snapshotFileContent);
-    snapshotLayout->addWidget(m_acceptSnapshotButton);
+    auto acceptButtonLayout = new QHBoxLayout();
+    acceptButtonLayout->addWidget(m_acceptSnapshotButton);
+    acceptButtonLayout->addWidget(m_acceptAllSnapshotsButton);
+    snapshotLayout->addLayout(acceptButtonLayout);
 
     auto splitter = new QSplitter(this);
     splitter->setChildrenCollapsible(false);
@@ -207,7 +284,9 @@ SnapshotToolWindow::SnapshotToolWindow(QWidget* parent)
     QObject::connect(m_snapshotFileTree->selectionModel(), &QItemSelectionModel::selectionChanged, this, &SnapshotToolWindow::onSnapshotClicked);
     QObject::connect(m_snapshotFileTree->selectionModel(), &QItemSelectionModel::selectionChanged, this, &SnapshotToolWindow::onUpdateButtonState);
     QObject::connect(m_rejectSnapshotButton, &QPushButton::clicked, this, &SnapshotToolWindow::onRejectClicked);
+    QObject::connect(m_rejectAllSnapshotsButton, &QPushButton::clicked, this, &SnapshotToolWindow::onRejectAllClicked);
     QObject::connect(m_acceptSnapshotButton, &QPushButton::clicked, this, &SnapshotToolWindow::onAcceptClicked);
+    QObject::connect(m_acceptAllSnapshotsButton, &QPushButton::clicked, this, &SnapshotToolWindow::onAcceptAllClicked);
     QObject::connect(m_selectedSnapshotWatcher, &QFileSystemWatcher::fileChanged, this, &SnapshotToolWindow::onCurrentDisplayedFileChanged);
 }
 
@@ -250,6 +329,8 @@ void SnapshotToolWindow::setDirectoryToWatch(const QString& dirPath)
 
     const auto windowTitle = QString("%1 - %2").arg(ToolName, dirPath);
     setWindowTitle(windowTitle);
+
+    onUpdateButtonState();
 }
 
 void SnapshotToolWindow::clearPreviews()
@@ -329,9 +410,13 @@ void SnapshotToolWindow::onUpdateButtonState()
 {
     const auto selectedIndexes = m_snapshotFileTree->selectionModel()->selectedIndexes();
     const auto isFileSelected = (!selectedIndexes.isEmpty() && m_fileSystemModel->fileInfo(selectedIndexes.first()).isFile());
+    const auto rootPath = GetCurrentRootPath(m_fileSystemModel, m_snapshotFileTree);
+    const auto hasSnapshotFiles = HasSnapshotFiles(rootPath);
 
     m_acceptSnapshotButton->setEnabled(isFileSelected);
     m_rejectSnapshotButton->setEnabled(isFileSelected);
+    m_acceptAllSnapshotsButton->setEnabled(hasSnapshotFiles);
+    m_rejectAllSnapshotsButton->setEnabled(hasSnapshotFiles);
 }
 
 void SnapshotToolWindow::onRejectClicked()
@@ -348,7 +433,36 @@ void SnapshotToolWindow::onRejectClicked()
     if (wasRemoved)
         return;
 
-    ShowWarningDialog(QString("Failed to delete the file: '%1'").arg(snapshotFile.fileName()));
+    showWarningDialog(QString("Failed to delete the file: '%1'").arg(snapshotFile.fileName()));
+}
+
+void SnapshotToolWindow::onRejectAllClicked()
+{
+    const auto rootPath = GetCurrentRootPath(m_fileSystemModel, m_snapshotFileTree);
+    if (!HasSnapshotFiles(rootPath))
+        return;
+
+    if (!showConfirmationDialog("Reject All Snapshots", "Do you really want to reject all snapshot files in the current directory and its subdirectories?"))
+        return;
+
+    clearSelectedSnapshotWatcher();
+
+    QDirIterator iterator(rootPath, QStringList() << SnapshotFileExtensionMask, QDir::Files, QDirIterator::Subdirectories);
+    while (iterator.hasNext())
+    {
+        QFile snapshotFile(iterator.next());
+        if (!snapshotFile.exists())
+            continue;
+
+        if (!snapshotFile.remove())
+        {
+            showWarningDialog(QString("Failed to delete the file: '%1'").arg(snapshotFile.fileName()));
+            return;
+        }
+    }
+
+    clearPreviews();
+    onUpdateButtonState();
 }
 
 void SnapshotToolWindow::onAcceptClicked()
@@ -374,7 +488,7 @@ void SnapshotToolWindow::onAcceptClicked()
         }
         catch (const std::filesystem::filesystem_error& e)
         {
-            ShowWarningDialog(QString("Failed to delete the file: '%1'").arg(QString::fromStdString(originFileName.string())));
+            showWarningDialog(QString("Failed to delete the file: '%1'").arg(QString::fromStdString(originFileName.string())));
             return;
         }
     }
@@ -385,9 +499,56 @@ void SnapshotToolWindow::onAcceptClicked()
     }
     catch (const std::filesystem::filesystem_error& e)
     {
-        ShowWarningDialog(QString("Failed to rename the file: '%1' to '%2'")
+        showWarningDialog(QString("Failed to rename the file: '%1' to '%2'")
             .arg(QString::fromStdString(snapshotFileName.string()), QString::fromStdString(originFileName.string())));
     }
+}
+
+void SnapshotToolWindow::onAcceptAllClicked()
+{
+    const auto rootPath = GetCurrentRootPath(m_fileSystemModel, m_snapshotFileTree);
+    if (!HasSnapshotFiles(rootPath))
+        return;
+
+    if (!showConfirmationDialog("Accept All Snapshots", "Do you really want to accept all snapshot files in the current directory and its subdirectories?"))
+        return;
+
+    clearSelectedSnapshotWatcher();
+
+    QDirIterator iterator(rootPath, QStringList() << SnapshotFileExtensionMask, QDir::Files, QDirIterator::Subdirectories);
+    while (iterator.hasNext())
+    {
+        const auto snapshotPathString = iterator.next();
+        const auto snapshotFilePath = std::filesystem::path(snapshotPathString.toStdString());
+        const auto originFilePath = GetOriginFileInfoForSnapshot(snapshotFilePath);
+
+        if (std::filesystem::exists(originFilePath))
+        {
+            try
+            {
+                std::filesystem::remove(originFilePath);
+            }
+            catch (const std::filesystem::filesystem_error&)
+            {
+                showWarningDialog(QString("Failed to delete the file: '%1'").arg(QString::fromStdString(originFilePath.filename().string())));
+                return;
+            }
+        }
+
+        try
+        {
+            std::filesystem::rename(snapshotFilePath, originFilePath);
+        }
+        catch (const std::filesystem::filesystem_error&)
+        {
+            showWarningDialog(QString("Failed to rename the file: '%1' to '%2'")
+                .arg(QString::fromStdString(snapshotFilePath.filename().string()), QString::fromStdString(originFilePath.filename().string())));
+            return;
+        }
+    }
+
+    clearPreviews();
+    onUpdateButtonState();
 }
 
 void SnapshotToolWindow::onCurrentDisplayedFileChanged(const QString& filePath)
@@ -439,11 +600,11 @@ void SnapshotToolWindow::rebuildRecentMenu()
     for (const auto dir : m_recentDirectories)
     {
         auto action = m_recentMenu->addAction(dir);
-        QObject::connect(action, &QAction::triggered, this, 
+        QObject::connect(action, &QAction::triggered, this,
             [this, dir]() {
                 if (!QDir(dir).exists())
                 {
-                    ShowWarningDialog(QString("Directory does not exist: %1").arg(dir));
+                    showWarningDialog(QString("Directory does not exist: %1").arg(dir));
                     return;
                 }
                 setDirectoryToWatch(dir);

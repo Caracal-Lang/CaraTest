@@ -31,7 +31,9 @@ private:
     QTextEdit* m_originFileContent;
     QTextEdit* m_snapshotFileContent;
     QPushButton* m_rejectSnapshotButton;
+    QPushButton* m_rejectAllSnapshotsButton;
     QPushButton* m_acceptSnapshotButton;
+    QPushButton* m_acceptAllSnapshotsButton;
     QFileSystemModel* m_fileSystemModel;
     QFileSystemWatcher* m_selectedSnapshotWatcher;
     DiffHighlighter* m_originFileDiffHighlighter;
@@ -42,7 +44,9 @@ private:
     void onSnapshotClicked();
     void onUpdateButtonState();
     void onRejectClicked();
+    void onRejectAllClicked();
     void onAcceptClicked();
+    void onAcceptAllClicked();
     void onCurrentDisplayedFileChanged(const QString& filePath);
     void selectDirectoryToWatch();
     void setDirectoryToWatch(const QString& dirPath);
@@ -51,4 +55,6 @@ private:
     void updateHighlighters();
     void rebuildRecentMenu();
     void addDirectoryToRecent(const QString& dirPath);
+    void showWarningDialog(const QString& message) const;
+    bool showConfirmationDialog(const QString& title, const QString& message) const;
 };
