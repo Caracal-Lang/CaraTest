@@ -1,9 +1,10 @@
-#pragma once
+﻿#pragma once
 
 #include <QtWidgets/QMainWindow>
-#include <QtCore/QList>
+#include <QtCore/QStringList>
 
 class QMenuBar;
+class QMenu;
 class QTreeView;
 class QLabel;
 class QTextEdit;
@@ -23,6 +24,7 @@ public:
 
 private:
     QMenuBar* m_menuBar;
+    QMenu* m_recentMenu;
     QTreeView* m_snapshotFileTree;
     QLabel* m_originFileName;
     QLabel* m_snapshotFileName;
@@ -34,6 +36,7 @@ private:
     QFileSystemWatcher* m_selectedSnapshotWatcher;
     DiffHighlighter* m_originFileDiffHighlighter;
     DiffHighlighter* m_snapshotFileDiffHighlighter;
+    QStringList m_recentDirectories;
 
     void showEvent(QShowEvent* event) override;
     void onSnapshotClicked();
@@ -46,4 +49,6 @@ private:
     void clearPreviews();
     void clearSelectedSnapshotWatcher();
     void updateHighlighters();
+    void rebuildRecentMenu();
+    void addDirectoryToRecent(const QString& dirPath);
 };

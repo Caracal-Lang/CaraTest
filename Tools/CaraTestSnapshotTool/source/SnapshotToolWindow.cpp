@@ -9,10 +9,12 @@
 #include <QtCore/QStandardPaths>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
+#include <QtCore/QJsonArray>
 
 #include <QtWidgets/QVBoxLayout>
 #include <QtWidgets/QLabel>
 #include <QtWidgets/QMenuBar>
+#include <QtWidgets/QMenu>
 #include <QtWidgets/QPushButton>
 #include <QtWidgets/QTextEdit>
 #include <QtWidgets/QTreeView>
@@ -34,6 +36,7 @@ namespace
     const auto ConsolasFont = QFont{ "Consolas", 12, QFont::Normal };
     const auto AcceptColor = QColor("#8AE28A");
     const auto RejectColor = QColor("#F44B56");
+    const int MaxRecentDirectories = 10;
 
     static void ShowWarningDialog(const QString& message)
     {
@@ -61,7 +64,7 @@ namespace
         return filePath;
     }
 
-    static QString LoadLastDirectory()
+    static QStringList LoadRecentDirectories()
     {
         const auto optionalFileContent = CaraTest::File::readContent(GetSettingsFilePath());
         if (!optionalFileContent.has_value())
@@ -73,13 +76,30 @@ namespace
             return {};
 
         const auto jsonObject = jsonDocument.object();
-        return jsonObject.value("lastDirectory").toString();
+        const auto jsonValue = jsonObject.value("recentDirectories");
+        if (!jsonValue.isArray())
+            return {};
+
+        const auto jsonArray = jsonValue.toArray();
+        QStringList result;
+        for (const auto& value : jsonArray)
+        {
+            if (value.isString())
+                result.append(value.toString());
+        }
+        return result;
     }
 
-    static void SaveLastDirectory(const QString& dirPath)
+    static void SaveRecentDirectories(const QStringList& dirs)
     {
         QJsonObject jsonObject{};
-        jsonObject["lastDirectory"] = dirPath;
+        QJsonArray jsonArray{};
+        for (const auto& dir : dirs)
+        {
+            jsonArray.append(dir);
+        }
+        jsonObject["recentDirectories"] = jsonArray;
+
         QJsonDocument jsonDocument(jsonObject);
 
         const auto settingsFilePath = GetSettingsFilePath();
@@ -91,12 +111,19 @@ namespace
 SnapshotToolWindow::SnapshotToolWindow(QWidget* parent)
     : QMainWindow(parent)
     , m_selectedSnapshotWatcher(new QFileSystemWatcher(this))
+    , m_recentMenu(nullptr)
 {
     setWindowTitle(ToolName);
 
     m_menuBar = new QMenuBar(this);
     setMenuBar(m_menuBar);
     m_menuBar->addAction(QString("Select Directory"), this, &SnapshotToolWindow::selectDirectoryToWatch);
+
+    m_recentMenu = new QMenu("Recent Directories", m_menuBar);
+    m_menuBar->addMenu(m_recentMenu);
+
+    m_recentDirectories = LoadRecentDirectories();
+    rebuildRecentMenu();
 
     m_snapshotFileTree = new QTreeView(this);
     m_fileSystemModel = new QFileSystemModel(this);
@@ -192,10 +219,9 @@ void SnapshotToolWindow::showEvent(QShowEvent* event)
 
     firstShowEvent = false;
 
-    const auto lastDirectory = LoadLastDirectory();
-    if (!lastDirectory.isEmpty() && QDir(lastDirectory).exists())
+    if (!m_recentDirectories.isEmpty() && QDir(m_recentDirectories.first()).exists())
     {
-        setDirectoryToWatch(lastDirectory);
+        setDirectoryToWatch(m_recentDirectories.first());
     }
     else
     {
@@ -210,7 +236,8 @@ void SnapshotToolWindow::selectDirectoryToWatch()
         return;
 
     setDirectoryToWatch(dirPath);
-    SaveLastDirectory(dirPath);
+    addDirectoryToRecent(dirPath);
+    SaveRecentDirectories(m_recentDirectories);
 }
 
 void SnapshotToolWindow::setDirectoryToWatch(const QString& dirPath)
@@ -240,7 +267,7 @@ void SnapshotToolWindow::clearPreviews()
 void SnapshotToolWindow::clearSelectedSnapshotWatcher()
 {
     const auto watchedFiles = m_selectedSnapshotWatcher->files();
-    if(!watchedFiles.isEmpty())
+    if (!watchedFiles.isEmpty())
         m_selectedSnapshotWatcher->removePaths(watchedFiles);
 }
 
@@ -259,7 +286,7 @@ void SnapshotToolWindow::onSnapshotClicked()
     const auto selectedIndexes = m_snapshotFileTree->selectionModel()->selectedIndexes();
     if (selectedIndexes.isEmpty())
         return;
-    
+
     clearPreviews();
 
     const auto& index = selectedIndexes.first();
@@ -284,7 +311,7 @@ void SnapshotToolWindow::onSnapshotClicked()
     const auto snapshotFileName = snapshotFileInfo.fileName();
     m_snapshotFileName->setText(snapshotFileName);
     const auto optionalSnapshotFileContent = CaraTest::File::readContent(snapshotFilePath);
-    if(optionalSnapshotFileContent.has_value())
+    if (optionalSnapshotFileContent.has_value())
     {
         const auto snapshotFileContent = QString::fromStdString(optionalSnapshotFileContent.value());
         m_snapshotFileContent->setText(snapshotFileContent);
@@ -359,7 +386,7 @@ void SnapshotToolWindow::onAcceptClicked()
     catch (const std::filesystem::filesystem_error& e)
     {
         ShowWarningDialog(QString("Failed to rename the file: '%1' to '%2'")
-                          .arg(QString::fromStdString(snapshotFileName.string()), QString::fromStdString(originFileName.string())));
+            .arg(QString::fromStdString(snapshotFileName.string()), QString::fromStdString(originFileName.string())));
     }
 }
 
@@ -404,4 +431,36 @@ void SnapshotToolWindow::onCurrentDisplayedFileChanged(const QString& filePath)
     }
 
     updateHighlighters();
+}
+
+void SnapshotToolWindow::rebuildRecentMenu()
+{
+    m_recentMenu->clear();
+    for (const auto dir : m_recentDirectories)
+    {
+        auto action = m_recentMenu->addAction(dir);
+        QObject::connect(action, &QAction::triggered, this, 
+            [this, dir]() {
+                if (!QDir(dir).exists())
+                {
+                    ShowWarningDialog(QString("Directory does not exist: %1").arg(dir));
+                    return;
+                }
+                setDirectoryToWatch(dir);
+                addDirectoryToRecent(dir);
+                SaveRecentDirectories(m_recentDirectories);
+            });
+    }
+}
+
+void SnapshotToolWindow::addDirectoryToRecent(const QString& dirPath)
+{
+    m_recentDirectories.removeAll(dirPath);
+    m_recentDirectories.insert(0, dirPath);
+    while (m_recentDirectories.size() > MaxRecentDirectories)
+    {
+        m_recentDirectories.removeLast();
+    }
+
+    rebuildRecentMenu();
 }
