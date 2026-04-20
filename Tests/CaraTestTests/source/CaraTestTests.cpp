@@ -387,7 +387,7 @@ namespace Simple
 
         suite.add(std::string(), []()
             {
-                CaraTest::contains(std::string("str"), std::string("string"));
+                CaraTest::contains(std::string("string"), std::string("str"));
             });
         const auto result = runner.run(suite);
 
